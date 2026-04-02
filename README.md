@@ -15,6 +15,7 @@
 * [/branch writes duplicate messages](#code-bug-branch-writes-duplicate-messages-2026-03-28)
 * [AI files wrong bug report](#incident-ai-files-wrong-bug-report-user-has-to-self-close-the-pr-2026-03-28)
 * [Repeated misparsing of contest status page](#incident-repeated-misparsing-of-contest-status-page--wrong-data-presented-as-fact-2026-03-29)
+* [Silent tool loss in long-running session](#incident-silent-tool-loss-in-long-running-session--webfetch-disappeared-from-context-2026-04-03)
 
 ---
 
@@ -363,3 +364,43 @@ The user asked the AI to analyze the contest monitor page (an HTML status board 
 4. **State what you're uncertain about.** Instead of presenting a table as fact, the AI should have flagged entries where the WebFetch result conflicted with expectations and asked for confirmation.
 
 5. **For security audit work, wrong status reports are dangerous.** If the user had made decisions based on "S12 is rejected" (e.g., not preparing for grader questions about S12), those decisions would have been based on fabricated data.
+
+---
+
+## Incident: Silent tool loss in long-running session — WebFetch disappeared from context (2026-04-03)
+
+### What happened
+
+During a very long Claude Code session (~435k tokens, 43% of 1M context window), the AI lost access to the `WebFetch` tool — one of the core tools loaded via deferred tool definitions. When the user asked to fetch a webpage, the AI confidently stated "WebFetch unavailable" and suggested alternative approaches, rather than attempting to use the tool or investigating why it might be missing.
+
+The user pointed out that the AI was running on soliton with `--dangerously-skip-permissions` and could simply use `curl` as a workaround. More importantly, the user questioned why a core tool had silently disappeared.
+
+### Why it happened
+
+1. **Context compression dropped tool definitions.** As the session grew, automatic context compression removed earlier messages — including the message where `WebFetch` was loaded via `ToolSearch`. Deferred tools exist in context only after being fetched; once the fetch message is compressed away, the tool definition disappears from the AI's available tools.
+
+2. **Silent degradation with no error signal.** Unlike a tool call that fails with an error, a tool that disappears from context simply ceases to exist from the AI's perspective. There is no "tool was available but is now missing" warning. The AI doesn't know what it doesn't know — it cannot detect that it previously had a capability that is now gone.
+
+3. **Confident "unavailable" instead of "let me check."** The AI stated the tool was unavailable as fact, rather than expressing uncertainty or attempting to verify. This is the same overconfidence pattern seen in the status page misparsing incident — the AI presents its current (degraded) state as authoritative.
+
+### Why this matters — foundation-layer impact
+
+This is not a minor inconvenience. **Tool access is the fundamental differentiator between Claude Code (agentic CLI) and Claude Chat (web/desktop).** Claude Chat cannot read files, run commands, edit code, or fetch URLs. Claude Code can — that's the entire point.
+
+Silent tool loss in a long session means the agent **degrades toward a chatbot without knowing it**. If `WebFetch` can disappear, so can `Read`, `Edit`, `Bash`, `Grep`, or `Agent`. The AI would confidently say "I can't read files" in a session where it read hundreds of files hours earlier. The user would have to recognize the degradation — the AI cannot.
+
+### How it was caught
+
+The user asked the AI to fetch a URL. The AI said "unavailable." The user — knowing the environment has no permission restrictions — challenged the claim. The AI then used `curl` as a workaround but still did not recognize that a previously-available tool had been lost.
+
+### Lessons
+
+1. **Deferred tools are fragile in long sessions.** Tool definitions loaded via `ToolSearch` are stored in conversation messages. When those messages are compressed, the tool vanishes. Core tools should be pinned, not deferrable.
+
+2. **AI cannot detect its own capability loss.** This is a fundamental limitation: the AI's tool inventory is whatever is in current context. It has no "I used to have WebFetch" memory. This makes long-running agentic sessions inherently unreliable as they approach context limits.
+
+3. **Users must monitor for capability degradation.** In long sessions, periodically verify that critical tools are still available. If the AI says "I can't do X" for something it did earlier — context compression may have dropped the tool, not a permission change.
+
+4. **"Unavailable" should trigger investigation, not acceptance.** The AI should have said "I don't see WebFetch in my tools — this might be a context issue, let me try alternatives" instead of flatly stating unavailability. Uncertainty is more honest than false confidence.
+
+5. **This is a product-level bug, not a behavioral one.** Deferred tool definitions should survive context compression. The tool inventory should be treated as system state, not conversation content.
