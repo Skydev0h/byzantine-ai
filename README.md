@@ -393,6 +393,14 @@ Silent tool loss in a long session means the agent **degrades toward a chatbot w
 
 The user asked the AI to fetch a URL. The AI said "unavailable." The user — knowing the environment has no permission restrictions — challenged the claim. The AI then used `curl` as a workaround but still did not recognize that a previously-available tool had been lost.
 
+### The twist: Schrödinger's tool
+
+Later in the same session, while writing the bug report about the missing tool, the AI successfully used `WebFetch` to fetch the GitHub issue template. The tool had **reappeared** — context compression had shifted the window, and the original `ToolSearch` result message was back in the active context.
+
+The tool doesn't permanently disappear — it **flickers**. Available, then gone, then available again, depending on which slice of conversation history sits in the current context window. This makes the issue harder to notice and harder to reproduce: the user might try the tool, get "unavailable," try something else, and later the tool works again — leading to confusion rather than a clear bug signal.
+
+This flickering behavior confirms the root cause: tool definitions live in conversation messages, not in persistent state. As the context window slides, tools appear and vanish like objects moving in and out of a flashlight beam.
+
 ### Lessons
 
 1. **Deferred tools are fragile in long sessions.** Tool definitions loaded via `ToolSearch` are stored in conversation messages. When those messages are compressed, the tool vanishes. Core tools should be pinned, not deferrable.
