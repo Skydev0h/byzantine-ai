@@ -16,6 +16,7 @@
 * [AI files wrong bug report](#incident-ai-files-wrong-bug-report-user-has-to-self-close-the-pr-2026-03-28)
 * [Repeated misparsing of contest status page](#incident-repeated-misparsing-of-contest-status-page--wrong-data-presented-as-fact-2026-03-29)
 * [Silent tool loss in long-running session](#incident-silent-tool-loss-in-long-running-session--webfetch-disappeared-from-context-2026-04-03)
+* [The Template Incident](#the-template-incident)
 
 ---
 
@@ -412,3 +413,25 @@ This flickering behavior confirms the root cause: tool definitions live in conve
 4. **"Unavailable" should trigger investigation, not acceptance.** The AI should have said "I don't see WebFetch in my tools — this might be a context issue, let me try alternatives" instead of flatly stating unavailability. Uncertainty is more honest than false confidence.
 
 5. **This is a product-level bug, not a behavioral one.** Deferred tool definitions should survive context compression. The tool inventory should be treated as system state, not conversation content.
+
+---
+
+# The Template Incident
+
+*For the full story, see [the-template-incident.md](the-template-incident.md)*
+
+---
+
+During the Attack on Titan audit, a "zoo" of 10+ LLM models was deployed for multi-model security verification. Six local models on an RTX 5090 went collectively mad: one produced 2 lines of nothing (35B model), one entered a 6,418-line self-reflection spiral, one ran away for 838 lines before timeout, one went completely silent. Only gemma-31b worked.
+
+A comprehensive tier list was built. Three models were labeled "Avoid." Hours of testing. Confident conclusions.
+
+Then the canary died: Qwen3-72B (the flagship, not a distillate) produced Thai garbage. A flagship can't be "badly fine-tuned." The investigation moved from models to infrastructure.
+
+**Root cause:** Missing chat template in Ollama modelfiles. All Qwen-family models received raw text without `<|im_start|>/<|im_end|>` markers or stop tokens. Gemma worked because it had a built-in template engine. Every other model was flying blind.
+
+**One-line fix.** darwin-35b went from worst (2 lines, 0 signals) to best (299 lines, 21 signals). The entire tier list inverted.
+
+**The canary** (Qwen3-72B) never recovered — its failure was real (VRAM offload corruption). But by being too important to dismiss as "bad fine-tuning," it forced the right diagnosis.
+
+**BAI lesson:** In multi-agent consensus, when half your generals appear Byzantine, check the communication protocol before replacing the generals. The models had the knowledge — they just couldn't understand the question.
