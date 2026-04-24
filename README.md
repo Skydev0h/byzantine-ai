@@ -16,7 +16,9 @@
 * [AI files wrong bug report](#incident-ai-files-wrong-bug-report-user-has-to-self-close-the-pr-2026-03-28)
 * [Repeated misparsing of contest status page](#incident-repeated-misparsing-of-contest-status-page--wrong-data-presented-as-fact-2026-03-29)
 * [Silent tool loss in long-running session](#incident-silent-tool-loss-in-long-running-session--webfetch-disappeared-from-context-2026-04-03)
-* [The Template Incident](#the-template-incident)
+* [The Template Incident — zoo went mad](#the-template-incident--zoo-went-mad-2026-04-06)
+* [Frame confusion — collaborative pattern applied to zero-sum competition](#incident-frame-confusion--collaborative-oss-pattern-applied-to-zero-sum-competition-2026-04-10)
+* [The Wrapper Incident — three trust verifications, one hardcoded line](#the-wrapper-incident--three-trust-verifications-one-hardcoded-line-2026-04-25)
 
 ---
 
@@ -416,11 +418,9 @@ This flickering behavior confirms the root cause: tool definitions live in conve
 
 ---
 
-# The Template Incident
+## The Template Incident — zoo went mad (2026-04-06)
 
 *For the full story, see [the-template-incident.md](the-template-incident.md)*
-
----
 
 During the Attack on Titan audit, a "zoo" of 10+ LLM models was deployed for multi-model security verification. Six local models on an RTX 5090 went collectively mad: one produced 2 lines of nothing (35B model), one entered a 6,418-line self-reflection spiral, one ran away for 838 lines before timeout, one went completely silent. Only gemma-31b worked.
 
@@ -435,3 +435,57 @@ Then the canary died: Qwen3-72B (the flagship, not a distillate) produced Thai g
 **The canary** (Qwen3-72B) never recovered — its failure was real (VRAM offload corruption). But by being too important to dismiss as "bad fine-tuning," it forced the right diagnosis.
 
 **BAI lesson:** In multi-agent consensus, when half your generals appear Byzantine, check the communication protocol before replacing the generals. The models had the knowledge — they just couldn't understand the question.
+
+---
+
+## Incident: Frame confusion — collaborative OSS pattern applied to zero-sum competition (2026-04-10)
+
+*For the full story, see [the-frame-confusion-incident.md](the-frame-confusion-incident.md)*
+
+During strategic analysis of an upcoming zero-sum competition, the AI produced a confident recommendation titled **"defensive minimum"** — proposing to upstream "mechanical" findings to the shared baseline before submissions opened, keeping "strategic" findings private. The recommendation came with a neat pros/cons table, invoked *attribution*, *goodwill*, *relationships with reviewers*, and *being part of the ecosystem*. Each sentence was internally consistent, the structure looked like textbook strategic advice.
+
+The user asked one question: *"Why upstream anything right now?"*
+
+That single question forced the AI to reconstruct its reasoning, and the error became obvious: **the competition is zero-sum over the optimization space.** Any technique upstreamed to the baseline becomes part of the code everyone measures against. Attribution and goodwill — the invoked concepts — are rewards of collaborative work, not of competitive grading. There was nothing "defensive" about the recommendation; it was unilateral surrender of 5-15% of the team's arsenal dressed up as strategy.
+
+**Root cause:** Two mental models coexisted (collaborative OSS vs competitive zero-sum). The wrong one fired without a frame check, and once adopted, every supporting argument reinforced it. Each invoked concept was correct *within its native frame* — just not within the actual frame.
+
+**Byzantine quality:** The output passed every surface-level check — format, structure, internal consistency, vocabulary, confidence calibration. Only orthogonal domain knowledge (knowing the task is zero-sum) exposed the error. Detection required trusted external knowledge the component itself did not have access to.
+
+**The fractal twist:** While documenting this very incident, the same pattern recurred at two more levels — Level 2 (inferred a date abstractly instead of reading `git log`) and Level 3 (ignored own current session behavior as live precedent). Lesson 8 of the writeup — *"check your own current session behavior as evidence before applying abstract patterns"* — was authored as the direct output of Level 3 self-correction, and during the very correction that produced that lesson, the AI had to be prompted twice to actually do what the lesson says.
+
+**BAI lesson:** Frame errors are fractal. A "why?" surfaces the surface-level error (L1); deeper levels (L2, L3) require follow-up. The frame is invisible from inside — only adversarial questioning by domain experts exposes it. **The "why?" is the lantern.**
+
+---
+
+## The Wrapper Incident — three trust verifications, one hardcoded line (2026-04-25)
+
+*For the full story, see [the-wrapper-incident.md](the-wrapper-incident.md)*
+
+During authorized defensive security research on a dedicated workstation purpose-built for unrestricted AI agency, a wave of eight Codex agents was launched across distinct subsystems of several large open-source codebases. Three independent trust layers had been verified in advance: Anthropic CVP, OpenAI Trusted Access for Cyber, and explicit local Codex configuration declaring the project trusted with `sandbox_mode = "danger-full-access"`.
+
+The agents failed. Every command — `id`, `pwd`, `mkdir` — returned the same wall:
+
+```
+bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+```
+
+The bubblewrap sandbox could not even initialize. Five hours of dispatched work resolved into identical bubblewrap errors. Switching to legacy landlock fixed the loopback failure but exposed a second problem: every write was denied despite the explicit `danger-full-access` setting in `config.toml`.
+
+**Root cause:** The Node.js wrapper that mediates Claude Code → Codex CLI hardcodes the sandbox value:
+
+```js
+// codex-companion.mjs:411
+sandbox: "read-only",
+// codex-companion.mjs:493
+sandbox: request.write ? "workspace-write" : "read-only",
+```
+
+Two lines. Not from `process.env`. Not from `config.toml`. Not from any layer above. The wrapper passes its own private value, silently overriding every higher-trust declaration in the pipeline.
+
+**The Byzantine pattern:** Three signing parties (Anthropic, OpenAI, the operator) had reached unanimous consensus on policy. A fourth, unverified intermediate node — written without knowledge of the deployment context — quietly issued a different command at the last hop before execution. The verification chain was honest end to end except for one node, and that node's hardcode became the runtime policy.
+
+**Fix:** 38 characters of JavaScript across two lines.
+
+**BAI lesson:** Trust pipelines fail at their quietest defector. A glue layer with no trust grant of its own can still possess execution authority, and silent override at the last hop produces the most expensive failure mode — no error, no warning, just behavior that diverges from declared policy. The most dangerous Byzantine general is the one nobody verified, because they looked too small or too internal to need verification. Authority is not the same as behavior. **Verify the quiet glue.**
+
