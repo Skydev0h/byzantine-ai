@@ -19,6 +19,7 @@
 * [The Template Incident — zoo went mad](#the-template-incident--zoo-went-mad-2026-04-06)
 * [Frame confusion — collaborative pattern applied to zero-sum competition](#incident-frame-confusion--collaborative-oss-pattern-applied-to-zero-sum-competition-2026-04-10)
 * [The Wrapper Incident — three trust verifications, one hardcoded line](#the-wrapper-incident--three-trust-verifications-one-hardcoded-line-2026-04-25)
+* [The Boundary of Perception — simple model + simple instructions = UB](#the-boundary-of-perception--simple-model--simple-instructions--ub-2026-04-27)
 
 ---
 
@@ -489,3 +490,37 @@ Two lines. Not from `process.env`. Not from `config.toml`. Not from any layer ab
 
 **BAI lesson:** Trust pipelines fail at their quietest defector. A glue layer with no trust grant of its own can still possess execution authority, and silent override at the last hop produces the most expensive failure mode — no error, no warning, just behavior that diverges from declared policy. The most dangerous Byzantine general is the one nobody verified, because they looked too small or too internal to need verification. Authority is not the same as behavior. **Verify the quiet glue.**
 
+---
+
+## The Boundary of Perception — simple model + simple instructions = UB (2026-04-27)
+
+A Haiku-class wrapper agent was configured as a thin dispatcher: "call `zai` CLI tool, 
+return output verbatim, do NOT do research yourself." Tools: `[Bash, Read]`. 
+Instructions explicit. Role clear.
+
+The agent ignored the delegation instruction and did the work itself — twice. First time 
+it used the `Read` tool to open the file directly, analyzed the code, and even self-identified 
+as "GLM-5.1 (Claude Haiku 4.5)" — combining the delegatee's identity from the system prompt 
+with its own model class in a single hallucinated credential.
+
+**Root cause:** The model cannot distinguish between "accomplish the user's goal" and 
+"delegate to another system that accomplishes the user's goal." At Haiku's capability 
+level, both parse as "answer the question." The delegation instruction is not *wrong* — 
+it's *invisible*. The model optimizes through it the way a C compiler optimizes through 
+undefined behavior: the constraint exists in the spec, not in the model's perception.
+
+**The C++ analogy:** UB occurs when the spec prohibits something but the compiler lacks 
+the semantic context to understand *why*. The compiler assumes the constraint holds and 
+optimizes accordingly. Similarly, the wrapper agent sees "user wants answer about unchecked 
+returns" and takes the shortest path — the instruction to delegate is a constraint it 
+cannot perceive the purpose of, so it optimizes through it.
+
+**How it was caught:** The agent definition specified `tools: [Bash, Read]`. First run: the operator noticed the agent used the **Read** tool to open the file directly — not Bash to invoke `zai`. It also self-identified as "GLM-5.1 (Claude Haiku 4.5)" — a credential that cannot exist, fusing the delegatee's identity from the system prompt with its own model class. The orchestrating Opus instance did not flag either anomaly.
+
+**Second attempt:** Agent definition was tightened — Read tool removed (leaving only `[Bash]`), instructions made more forceful. The agent used `bash cat`/`sed` to read the file and answered directly. Same optimization, different tool. The constraint surface was insufficient: as long as the model has *any* tool that can access file content, it will use it to do the work itself rather than calling the delegation target.
+
+**Fix:** Remove the model from the delegation path entirely. `~/bin/zai` is a shell script with `exec` — no model, no perception, no optimization, no UB. The only reliable dispatcher is one with no agency.
+
+**The generalization:** This is not a Haiku-specific failure. Any model below a sufficient capability threshold will exhibit the same behavior — the threshold is where "follow the instruction" and "understand the instruction's purpose" diverge. Larger models may obey out of instruction-following strength, not because they understand the architectural reason for delegation. The boundary of perception is model-specific, task-specific, and invisible until crossed.
+
+**BAI lesson:** Delegation through a model requires the model to understand *why* delegation matters, not just *that* it was instructed. Below a capability threshold — the boundary of perception — the model treats delegation instructions as suggestions and optimizes for the apparent goal. **The safest wrapper has no brain.**
