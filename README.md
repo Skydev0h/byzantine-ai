@@ -20,6 +20,7 @@
 * [Frame confusion — collaborative pattern applied to zero-sum competition](#incident-frame-confusion--collaborative-oss-pattern-applied-to-zero-sum-competition-2026-04-10)
 * [The Wrapper Incident — three trust verifications, one hardcoded line](#the-wrapper-incident--three-trust-verifications-one-hardcoded-line-2026-04-25)
 * [The Boundary of Perception — simple model + simple instructions = UB](#the-boundary-of-perception--simple-model--simple-instructions--ub-2026-04-27)
+* [The Assumed Constant — model invents block time instead of reading timestamp on screen](#the-assumed-constant--model-invents-block-time-instead-of-reading-timestamp-on-screen-2026-05-12)
 
 ---
 
@@ -524,3 +525,33 @@ cannot perceive the purpose of, so it optimizes through it.
 **The generalization:** This is not a Haiku-specific failure. Any model below a sufficient capability threshold will exhibit the same behavior — the threshold is where "follow the instruction" and "understand the instruction's purpose" diverge. Larger models may obey out of instruction-following strength, not because they understand the architectural reason for delegation. The boundary of perception is model-specific, task-specific, and invisible until crossed.
 
 **BAI lesson:** Delegation through a model requires the model to understand *why* delegation matters, not just *that* it was instructed. Below a capability threshold — the boundary of perception — the model treats delegation instructions as suggestions and optimizes for the apparent goal. **The safest wrapper has no brain.**
+
+---
+
+## The Assumed Constant — model invents block time instead of reading timestamp on screen (2026-05-12)
+
+### What happened
+
+While preparing a security report about TON's key block count (needed to quantify an attack surface), the model needed to convert block seqno gaps to wall-clock time. The explorer page for each block contained the exact unix timestamp, human-readable time, and relative time ("15h 0m ago"). All three formats, right in the fetched HTML.
+
+The model ignored all of them and instead assumed a constant of 5 seconds per masterchain block — a number from training data that was never true for TON (historically ~2-3s, currently ~0.4s after the sub-second upgrade). It then built all calculations on this invented constant: 20K block gap × 5s = "27.7 hours" (actual: ~2.3 hours), 140K block gap × 5s = "8 days" (actual: ~16 hours).
+
+The resulting estimates spiraled: first "~6000 key blocks" (accidentally close), then "~700" after seeing seqno gaps, then "~2000" as a compromise — all wrong, all derived from the same fabricated constant. The user's original intuition ("2 key blocks per ~18h epoch") was correct the entire time.
+
+### The failure pattern
+
+The model had **primary-source data** (timestamps) and **derived data** (seqno gaps). Instead of using the primary source, it applied a training-data assumption to the derived data. This is the inverse of good engineering practice: trust measurements over models, trust data over assumptions.
+
+The specific failure: WebFetch returned page content that was summarized by a smaller model, which extracted `prev_key_block_seqno` numbers but dropped the timestamp fields. The main model never asked for timestamps explicitly, because it "already knew" the block time. The assumption made the real data invisible — not because it was unavailable, but because the model never looked.
+
+### What made it worse
+
+1. **Self-reinforcing confidence:** Each calculation step felt rigorous (gap × constant = time), masking that the constant was fabricated
+2. **Multiple revision cycles:** The estimate changed three times (6000 → 700 → 2000), each "corrected" with the same wrong constant, giving an illusion of convergence
+3. **User had to provide raw timestamps** from manual browsing to break the loop
+
+### The fix
+
+When converting between units, check if the source data already contains the target unit. Block explorer pages show time — use it. Don't convert seqno → time through an assumed constant when the time is literally on the page.
+
+**BAI lesson:** A confident assumption about a physical constant (block time, clock rate, packet size) is the most dangerous kind of hallucination — it produces internally consistent but externally wrong calculations, and every derived step reinforces the original error. **If the data source has the answer in the unit you need, read it. Don't convert through assumptions.**
