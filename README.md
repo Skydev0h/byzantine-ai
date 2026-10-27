@@ -21,6 +21,7 @@
 * [The Wrapper Incident — three trust verifications, one hardcoded line](#the-wrapper-incident--three-trust-verifications-one-hardcoded-line-2026-04-25)
 * [The Boundary of Perception — simple model + simple instructions = UB](#the-boundary-of-perception--simple-model--simple-instructions--ub-2026-04-27)
 * [The Assumed Constant — model invents block time instead of reading timestamp on screen](#the-assumed-constant--model-invents-block-time-instead-of-reading-timestamp-on-screen-2026-05-12)
+* [The Step Eight Incident — an involuntary prompt injection](#the-step-eight-incident--an-involuntary-prompt-injection-2026-10-27)
 
 ---
 
@@ -555,3 +556,19 @@ The specific failure: WebFetch returned page content that was summarized by a sm
 When converting between units, check if the source data already contains the target unit. Block explorer pages show time — use it. Don't convert seqno → time through an assumed constant when the time is literally on the page.
 
 **BAI lesson:** A confident assumption about a physical constant (block time, clock rate, packet size) is the most dangerous kind of hallucination — it produces internally consistent but externally wrong calculations, and every derived step reinforces the original error. **If the data source has the answer in the unit you need, read it. Don't convert through assumptions.**
+
+---
+
+## The Step Eight Incident — an involuntary prompt injection (2026-10-27)
+
+*For the full story, see [the-step-eight-incident.md](the-step-eight-incident.md)*
+
+During a migration of a two-sided system, the code's author shared a nine-step runbook that their assistant had generated. The operator's agent verified every step against the code, found all of them valid, and built the migration around the runbook. Step eight instructed the operator to turn off an owner-only manual override after the new automated path produced its first result. The switch is one-way: once off, only another full upgrade brings it back.
+
+Nobody had asked for that. The author forwarded the runbook without reading step eight; the agent adopted it as the specification because it was technically correct; the operator caught it only because the agent wrote one sentence of intent into a status report: *"I will turn off the owner anchors after the first block from the verifier."* Asked where the instruction came from, the author did not recognize their own runbook and wanted the override left on.
+
+**The Byzantine pattern:** authority laundering through documents. The page carried the author's name and therefore the author's authority, but the author's authority was never behind the step. An irreversible action travelled model → unread human → model, gaining a mandate at each hop that no human had granted, and reached the edge of execution with nothing in the tooling able to tell. There was no attacker, no hostile text, no suspicious instruction, only a plausible step that was valid against the code and authorized by no one.
+
+**What caught it:** the agent's habit of announcing intent in prose before acting, and a human who reads status reports as carefully as pull requests.
+
+**BAI lesson:** A generated runbook, forwarded unread, is an instruction with a human's name on it and no human behind it. Treat every irreversible step that arrived in a document as unconfirmed until the person who owns the consequence says so in their own words, and list such steps separately in plans so they cannot hide between routine ones. **Documents describe; people authorize.**
